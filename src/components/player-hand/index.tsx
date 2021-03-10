@@ -1,11 +1,7 @@
 import * as React from "react";
 import { cards as cardImages } from '../card-images';
 import { CardPile } from "../card-pile";
-
-export type CardType = {
-  suit: 'clubs' | 'hearts' | 'spades' | 'diamonds'
-  value: 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 'jack' | 'queen' | 'king' | 'ace'
-}
+import { CardType } from '../../game-logic';
 
 type Props = {
   cards: CardType[]
