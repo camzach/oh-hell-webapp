@@ -1,5 +1,6 @@
-import * as webpack from "webpack";
-import * as HtmlWebPackPlugin from "html-webpack-plugin";
+import * as webpack from 'webpack';
+import * as HtmlWebPackPlugin from 'html-webpack-plugin';
+import * as MiniCssExtractPlugin from 'mini-css-extract-plugin';
 
 const htmlPlugin = new HtmlWebPackPlugin({
   template: "./src/index.html"
@@ -14,10 +15,33 @@ const config: webpack.Configuration = {
 
   module: {
     rules: [
-      { test: /\.tsx?$/, loader: "babel-loader" }
+      {
+        test: /\.tsx?$/,
+        use: [
+          { loader: "babel-loader" },
+          { loader: '@linaria/webpack-loader', options: { sourceMap: true } }
+        ],
+      },
+      { test: /\.svg$/, loader: '@svgr/webpack' },
+      {
+        test: /\.css$/,
+        use: [
+          { loader: MiniCssExtractPlugin.loader },
+          {
+            loader: 'css-loader',
+            options: { sourceMap: true },
+          },
+        ],
+      }
     ]
   },
-  plugins: [htmlPlugin]
+
+  plugins: [
+    htmlPlugin,
+    new MiniCssExtractPlugin({
+      filename: 'styles.css',
+    })
+  ]
 };
 
 export default config;

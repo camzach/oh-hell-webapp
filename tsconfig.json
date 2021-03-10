@@ -1,11 +1,16 @@
 {
-	"compilerOptions": {
-		"outDir": "./dist/",
-		"noImplicitAny": true,
-		"target": "es5",
-		"lib": ["es5", "es6", "dom"],
-		"jsx": "react",
-		"allowJs": true,
-		"moduleResolution": "node"
-	}
+  "compilerOptions": {
+    "module": "none",
+    "target": "esnext",
+    "declaration": true,
+    "jsx": "react",
+    "moduleResolution": "node",
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "outDir": "dist/types"
+  },
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
 }

@@ -1,7 +1,12 @@
 import * as React from "react";
+import { PlayerHand } from "./player-hand";
 
-export interface IAppProps {}
-
-export default function IApp(props: IAppProps) {
-  return <h1>Hello React Typescript!</h1>;
+export default function IApp() {
+  const [ hidden, setHidden ] = React.useState(false);
+  return (
+    <>
+      <button onClick={() => setHidden((h) => !h)}>{'Flip'}</button>
+      <PlayerHand hidden={hidden} cards={[ { suit: 'hearts', value: 'king' }, { suit: 'hearts', value: 'ace' } ]} />
+    </>
+  );
 }
