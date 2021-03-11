@@ -27,7 +27,6 @@ const Pile = styled.div`
 export function CardPile(props: Props) {
   const { cards, numPlayers } = props;
   const angle = 360 / numPlayers;
-  console.log(cards);
   return (
     <Pile>
       {cards.map((card, idx) =>

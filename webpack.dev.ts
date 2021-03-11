@@ -3,7 +3,8 @@ import * as HtmlWebPackPlugin from 'html-webpack-plugin';
 import * as MiniCssExtractPlugin from 'mini-css-extract-plugin';
 
 const htmlPlugin = new HtmlWebPackPlugin({
-  template: "./src/index.html"
+  template: "./src/index.html",
+  favicon: "./src/favicon.ico"
 });
 
 const config: webpack.Configuration = {
