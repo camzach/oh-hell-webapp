@@ -2,6 +2,7 @@ import * as React from "react";
 import { CardPile } from "../card-pile";
 import { PlayerHand } from "../player-hand";
 import { styled } from '@linaria/react';
+import { PublicGameStateType } from "../../game-logic";
 
 const GridWrapper = styled.div`
   display: grid;
@@ -21,25 +22,36 @@ const PileWrapper = styled.div`
   margin: auto;
 `;
 
+export const gameContext = React.createContext<PublicGameStateType>({ phase: 'play', cardsInTrick: [], playedCards: [] });
+export type GameActionType = {
+  type: 'play',
+  playerId: string
+}
+
 export function Game() {
-  const [ hidden, setHidden ] = React.useState(false);
+  const [ gameState, dispatch ] = React.useReducer((state: PublicGameStateType, action: GameActionType) => {
+    if (action.type === 'play') {
+      console.log(action.playerId, action);
+    }
+    return state;
+  }, { phase: 'play', cardsInTrick: [], playedCards: [] });
   return (
-    <GridWrapper>
-      <HandWrapper gridArea="north">
-        <PlayerHand hidden={hidden} cards={[ { suit: 'diamonds', value: 'king' }, { suit: 'hearts', value: 'ace' } ]} />
-      </HandWrapper>
-      <HandWrapper gridArea="east">
-        <PlayerHand hidden={hidden} cards={[ { suit: 'clubs', value: 'king' }, { suit: 'hearts', value: 'ace' } ]} />
-      </HandWrapper>
-      <PileWrapper>
-        <CardPile cards={[{ suit: 'clubs', value: 'ace'}, {suit: 'hearts', value: 4}, {suit: 'diamonds', value: 10}]} numPlayers={4} />
-      </PileWrapper>
-      <HandWrapper gridArea="west">
-        <PlayerHand hidden={hidden} cards={[ { suit: 'clubs', value: 'king' }, { suit: 'hearts', value: 'ace' } ]} />
-      </HandWrapper>
-      <HandWrapper gridArea="south">
-        <PlayerHand hidden={hidden} cards={[ { suit: 'clubs', value: 'king' }, { suit: 'hearts', value: 'ace' } ]} />
-      </HandWrapper>
-    </GridWrapper>
+    <gameContext.Provider value={gameState}>
+      <GridWrapper>
+        {([ 'south', 'west', 'north', 'east' ] as const).map((playerId) =>
+          <HandWrapper gridArea={playerId}>
+            <PlayerHand
+              hidden={playerId !== 'south'}
+              playerId={playerId}
+              cards={[ { suit: 'diamonds', value: 'king' }, { suit: 'hearts', value: 'ace' } ]}
+              dispatch={dispatch}
+            />
+          </HandWrapper>
+        )}
+        <PileWrapper>
+          <CardPile cards={gameState.cardsInTrick} numPlayers={4} />
+        </PileWrapper>
+      </GridWrapper>
+    </gameContext.Provider>
   );
 }
