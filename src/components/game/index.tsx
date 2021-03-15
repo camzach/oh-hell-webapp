@@ -2,7 +2,9 @@ import * as React from "react";
 import { CardPile } from "../card-pile";
 import { PlayerHand } from "../player-hand";
 import { styled } from '@linaria/react';
-import { keyBy, mapKeys, mapValues } from 'lodash';
+import { cards } from '../card-images';
+import { mapKeys, cloneDeep } from "lodash";
+
 const SocketIO: SocketIOClientStatic = require('socket.io-client');
 const ENDPOINT = "ws://localhost:5000";
 
@@ -10,7 +12,7 @@ const GridWrapper = styled.div`
   display: grid;
   grid-template: 20em auto 20em / 20em auto 20em;
   grid-template-areas: ".    north ."
-                     "east pile  west"
+                     "west pile  east"
                      ".    south .";
   height: 100%;
   width: 100%;
@@ -18,6 +20,8 @@ const GridWrapper = styled.div`
 const HandWrapper = styled.div<{ gridArea: 'north' | 'south' | 'east' | 'west' }>`
   grid-area: ${(props) => props.gridArea};
   margin: auto;
+  display: flex;
+  flex-direction: column;
 `;
 const PileWrapper = styled.div`
   grid-area: pile;
@@ -41,35 +45,89 @@ type GameStateType = {
     east: CardType[]
     west: CardType[]
   }
-  phase: 'play' | 'bid'
-  cardsInTrick: CardType[]
+  bids: {
+    north: number
+    south: number
+    east: number
+    west: number
+  }
+  taken: {
+    north: number
+    south: number
+    east: number
+    west: number
+  }
+  scores: {
+    north: number
+    south: number
+    east: number
+    west: number
+  }
+  phase: 'play' | 'bid' | 'pre-deal'
+  cardsInTrick: Array<CardType | null>
+  trumpCard: CardType | null
+}
+
+type AckType = {
+  for: 'play',
+  func: (card: CardType) => void
+} | {
+  for: 'bid',
+  func: (bid: number) => void
+} | {
+  for: 'deal',
+  func: () => void
+}
+
+const players = [ 'south', 'bot_west', 'bot_north', 'bot_east' ];
+
+const clearedState: GameStateType = {
+  phase: 'pre-deal',
+  cardsInTrick: [ null, null, null, null ],
+  trumpCard: null,
+  hands: {
+    north: [],
+    south: [],
+    east: [],
+    west: []
+  },
+  bids: {
+    north: 0,
+    south: 0,
+    east: 0,
+    west: 0
+  },
+  taken: {
+    north: 0,
+    south: 0,
+    east: 0,
+    west: 0
+  },
+  scores: {
+    north: 0,
+    south: 0,
+    east: 0,
+    west: 0
+  }
 }
 
 export function Game() {
-  const [ gameState, setGameState ] = React.useState<GameStateType>({
-    phase: 'bid',
-    cardsInTrick: [],
-    hands: {
-      north: [],
-      south: [],
-      east: [],
-      west: []
-    }
-  });
-  const [ ack, setAck ] = React.useState<{ for: 'bid' | 'play', func: Function } | null>(null);
+  const [ gameState, setGameState ] = React.useState<GameStateType>(clearedState);
+  const [ ack, setAck ] = React.useState<AckType | null>(null);
   React.useEffect(() => {
     const socket = SocketIO(ENDPOINT);
     socket.on('connect', () => {
       socket.emit('new_game', {
-        players: [ 'bot_west', 'bot_north', 'bot_east', 'south' ],
+        players,
         max_hand: 3
       });
     });
     socket.on('game_init', (update: any) => {
       if ('success' in update) {
-        socket.emit('deal');
+        setAck({ for: 'deal', func: () => socket.emit('deal') });
       }
     });
+    socket.on('deal', console.log);
     socket.on('hands', (data: { [playerId: string]: string[] }) => setGameState((old) => {
       const hands = Object.entries(data).reduce((acc, [ key, hand ]) => {
         const newKey = key.startsWith('bot_') ? key.slice(4) : key;
@@ -79,20 +137,69 @@ export function Game() {
         });
         return { ...acc, [newKey]: newHand };
       }, { north: [], south: [], east: [], west: []});
-      return { ...old, hands };
+      return { ...old, phase: 'bid', hands };
     }));
     socket.on('bid_request', (data: any, thisAck: Function) => {
-      setAck({ for: 'bid', func: (val: any) => { thisAck(val); setAck(null) } });
+      setAck({ for: 'bid', func: (val) => { thisAck(val); setAck(null) } });
     });
     socket.on('card_request', (data: any, thisAck: Function) => {
-      setAck({ for: 'play', func: (val: any) => { thisAck(val); setAck(null) } });
+      setAck({
+        for: 'play',
+        func: (val) => {
+          setGameState((old) => {
+            const played = [ ...old.cardsInTrick ];
+            played[0] = val;
+            const newHands = cloneDeep(old.hands);
+            newHands.south = newHands.south.filter((card) => card.value !== val.value || card.suit !== val.suit);
+            console.log(newHands);
+            return { ...old, cardsInTrick: played, hands: newHands };
+          });
+          thisAck(`${val.value} of ${val.suit}`);
+          setAck(null)
+        }
+      });
     });
-    socket.on('play', console.log);
-    socket.on('trump', console.log);
-    socket.on('bids', console.log);
+    socket.on('play', (data: { player: keyof GameStateType['hands'], card: string }) => {
+      setGameState((old) => {
+        const played = [ ...old.cardsInTrick ];
+        const playerIdx = players.indexOf(data.player);
+        if (!playerIdx) {
+          return old;
+        }
+        const [ value, suit ] = data.card.toLowerCase().split(' of ');
+        played[playerIdx] = { value, suit } as CardType;
+        const newHands = cloneDeep(old.hands);
+        const playerName = (data.player.startsWith('bot') ? data.player.slice(4) : data.player) as keyof GameStateType['hands'];
+        newHands[playerName] = newHands[playerName].filter((card) => card.value !== value || card.suit !== suit);
+        console.log(playerName, old.hands, newHands);
+        return { ...old, cardsInTrick: played, hands: newHands };
+      })
+    });
+    socket.on('trump', (data: string) => {
+      const [ value, suit ] = data.toLowerCase().split(' of ') as [ CardType['value'], CardType['suit']];
+      setGameState((old) => ({ ...old, trumpCard: { value, suit } }));
+    });
+    socket.on('bids', (bids: GameStateType['bids']) => {
+      setGameState((old) => {
+        const newBids = mapKeys(bids, (_, key) => key.startsWith('bot') ? key.slice(4) : key) as GameStateType['bids'];
+        return { ...old, bids: newBids };
+      })
+    });
     socket.on('lead_suit', console.log);
-    socket.on('winner', console.log);
-    socket.on('round_end', () => console.log('round end'));
+    socket.on('trick_winner', (data: string, ack: Function) => {
+      console.log(`${data} won the trick`)
+      const q = confirm('trick ended');
+      ack();
+      setGameState((old) => ({
+        ...old,
+        cardsInTrick: []
+      }));
+    })
+    socket.on('round_end', (data: any) => {
+      console.log(data);
+      setGameState(clearedState);
+      setAck({ for: 'deal', func: () => socket.emit('deal') });
+    });
   }, []);
   if (ack?.for === 'bid') {
     let bid = '';
@@ -101,29 +208,32 @@ export function Game() {
     }
     ack.func(parseInt(bid));
   }
-  if (ack?.for === 'play') {
-    let bid = null;
-    while (!bid) {
-      bid = prompt('Play a card') ?? '';
-    }
-    ack.func(bid);
-  }
   return (
     <GridWrapper>
-      {Object.entries(gameState.hands).map(([ playerId, hand ]) =>
+      {Object.entries(gameState.hands).map(([ playerId, hand ]: [keyof GameStateType['hands'], CardType[]]) =>
         <HandWrapper key={playerId} gridArea={playerId as keyof GameStateType['hands']}>
           <PlayerHand
             hidden={playerId !== 'south'}
-            playerId={playerId}
             cards={hand}
             onPlay={ack?.for === 'play' ? ack.func : undefined}
           />
+          <span>{`Bid: ${gameState.bids[playerId]}`}</span>
+          <span>{`Taken: ${gameState.taken[playerId]}`}</span>
+          <span>{`Score: ${gameState.scores[playerId]}`}</span>
         </HandWrapper>
       )}
       <PileWrapper>
         <CardPile cards={gameState.cardsInTrick} numPlayers={4} />
       </PileWrapper>
-      <DealButton>{'Deal'}</DealButton>
+      {gameState.phase === 'pre-deal' && ack?.for === 'deal' &&
+        <DealButton onClick={ack.func}>{'Deal'}</DealButton>
+      }
+      {gameState.trumpCard &&
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+          {cards[gameState.trumpCard.suit][gameState.trumpCard.value]({ height: '10em', width: 'auto' })}
+          <span>{'Trump Card'}</span>
+        </div>
+      }
     </GridWrapper>
   );
 }

@@ -5,13 +5,12 @@ import { CardType } from "../game";
 
 type Props = {
   cards: CardType[]
-  playerId: string
   hidden?: boolean
-  onPlay?: Function
+  onPlay?: (card: CardType) => void
 }
 
 export function PlayerHand(props: Props) {
-  const { playerId, cards, hidden, onPlay } = props;
+  const { cards, hidden, onPlay } = props;
   return (
     <div>
       {cards.map((card, idx) => {
@@ -21,7 +20,7 @@ export function PlayerHand(props: Props) {
           height={'10em'}
           width={'auto'}
           onClick={(!hidden && onPlay) ?
-            (() => onPlay(`${card.value} of ${card.suit}`)) :
+            (() => onPlay(card)) :
             () => {}
           }
         />

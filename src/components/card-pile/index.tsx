@@ -4,7 +4,7 @@ import { cards as cardImages } from '../card-images';
 import { CardType } from '../game';
 
 type Props = {
-  cards: CardType[]
+  cards: Array<CardType | null>
   numPlayers: number
 }
 
@@ -30,6 +30,7 @@ export function CardPile(props: Props) {
   return (
     <Pile>
       {cards.map((card, idx) =>
+        !!card &&
         <RotatedCard key={idx} angle={idx * angle} as={cardImages[card.suit][card.value]} />
       )}
     </Pile>
