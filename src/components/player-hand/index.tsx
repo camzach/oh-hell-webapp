@@ -1,18 +1,17 @@
 import * as React from "react";
 import { cards as cardImages } from '../card-images';
 import { CardPile } from "../card-pile";
-import { CardType } from '../../game-logic';
-import { GameActionType } from "../game";
+import { CardType } from "../game";
 
 type Props = {
   cards: CardType[]
   playerId: string
   hidden?: boolean
-  dispatch: React.Dispatch<GameActionType>
+  onPlay?: Function
 }
 
 export function PlayerHand(props: Props) {
-  const { playerId, cards, hidden, dispatch } = props;
+  const { playerId, cards, hidden, onPlay } = props;
   return (
     <div>
       {cards.map((card, idx) => {
@@ -21,8 +20,8 @@ export function PlayerHand(props: Props) {
           key={idx}
           height={'10em'}
           width={'auto'}
-          onClick={!hidden ?
-            (() => dispatch({ type: 'play', playerId: playerId })) :
+          onClick={(!hidden && onPlay) ?
+            (() => onPlay(`${card.value} of ${card.suit}`)) :
             () => {}
           }
         />

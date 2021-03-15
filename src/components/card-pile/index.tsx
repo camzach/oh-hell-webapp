@@ -1,7 +1,7 @@
 import * as React from 'react';
-import { CardType } from '../../game-logic';
 import { styled } from '@linaria/react';
 import { cards as cardImages } from '../card-images';
+import { CardType } from '../game';
 
 type Props = {
   cards: CardType[]
