@@ -145,7 +145,11 @@ export function Game() {
       }, { north: [], south: [], east: [], west: []});
       return { ...old, phase: 'bid', hands };
     }));
-    socket.on('bid_request', (data: any, thisAck: Function) => {
+    socket.on('bid_request', (bids: Partial<GameStateType['bids']>, thisAck: Function) => {
+      setGameState((old) => {
+        const newBids = mapKeys(bids, (_, key) => key.startsWith('bot') ? key.slice(4) : key) as GameStateType['bids'];
+        return { ...old, bids: { ...old.bids, ...newBids } };
+      })
       setAck({ for: 'bid', func: (val) => { thisAck(val); setAck(null) } });
     });
     socket.on('card_request', (data: any, thisAck: Function) => {
