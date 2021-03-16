@@ -77,6 +77,10 @@ type AckType = {
 } | {
   for: 'deal',
   func: () => void
+} | {
+  for: 'trick_end',
+  winner: keyof GameStateType['hands']
+  func: () => void
 }
 
 const players = [ 'south', 'bot_west', 'bot_north', 'bot_east' ];
@@ -114,6 +118,7 @@ const clearedState: GameStateType = {
 export function Game() {
   const [ gameState, setGameState ] = React.useState<GameStateType>(clearedState);
   const [ ack, setAck ] = React.useState<AckType | null>(null);
+  const [ tempBid, setTempBid ] = React.useState(0);
   React.useEffect(() => {
     const socket = SocketIO(ENDPOINT);
     socket.on('connect', () => {
@@ -186,17 +191,18 @@ export function Game() {
       })
     });
     socket.on('lead_suit', console.log);
-    socket.on('trick_winner', (data: keyof GameStateType['taken'], ack: Function) => {
-      confirm(`${data} won the trick`);
-      ack();
-      setGameState((old) => ({
-        ...old,
-        cardsInTrick: [],
-        taken: {
-          ...old.taken,
-          [data]: old.taken[data] + 1
-        }
-      }));
+    socket.on('trick_winner', (winner: keyof GameStateType['taken'], ack: () => void) => {
+      setAck({ for: 'trick_end', winner, func: () => {
+        ack();
+        setGameState((old) => ({
+          ...old,
+          cardsInTrick: [],
+          taken: {
+            ...old.taken,
+            [winner]: old.taken[winner] + 1
+          }
+        }));
+      }});
     })
     socket.on('round_end', () => {
       setGameState((old) => ({
@@ -212,13 +218,7 @@ export function Game() {
       }));
     });
   }, []);
-  if (ack?.for === 'bid') {
-    let bid = '';
-    while (isNaN(parseInt(bid))) {
-      bid = prompt('Place a bid') ?? '';
-    }
-    ack.func(parseInt(bid));
-  }
+
   return (
     <GridWrapper>
       {Object.entries(gameState.hands).map(([ playerId, hand ]: [keyof GameStateType['hands'], CardType[]]) =>
@@ -245,6 +245,23 @@ export function Game() {
           <span>{'Trump Card'}</span>
         </div>
       }
+      {ack?.for === 'bid' &&
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+          <input
+            value={tempBid}
+            min={0}
+            max={gameState.hands['south'].length}
+            onChange={(e) => setTempBid(e.target.valueAsNumber)}
+            type={'number'}
+          />
+          <button onClick={() => ack.func(tempBid)}>{'Place bid'}</button>
+        </div>
+      }{ack?.for === 'trick_end' &&
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+        <span>{`${ack.winner} won the trick`}</span>
+        <button onClick={ack.func}>{'Next trick'}</button>
+      </div>
+    }
     </GridWrapper>
   );
 }
