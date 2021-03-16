@@ -186,24 +186,35 @@ export function Game() {
       })
     });
     socket.on('lead_suit', console.log);
-    socket.on('trick_winner', (data: string, ack: Function) => {
-      console.log(`${data} won the trick`)
-      const q = confirm('trick ended');
+    socket.on('trick_winner', (data: keyof GameStateType['taken'], ack: Function) => {
+      confirm(`${data} won the trick`);
       ack();
       setGameState((old) => ({
         ...old,
-        cardsInTrick: []
+        cardsInTrick: [],
+        taken: {
+          ...old.taken,
+          [data]: old.taken[data] + 1
+        }
       }));
     })
-    socket.on('round_end', (data: any) => {
-      console.log(data);
-      setGameState(clearedState);
+    socket.on('round_end', () => {
+      setGameState((old) => ({
+        ...clearedState,
+        scores: old.scores
+      }));
       setAck({ for: 'deal', func: () => socket.emit('deal') });
+    });
+    socket.on('scores', (scores: GameStateType['scores']) => {
+      setGameState((old) => ({
+        ...old,
+        scores: mapKeys(scores, (_, key) => key.startsWith('bot') ? key.slice(4) : key) as GameStateType['scores']
+      }));
     });
   }, []);
   if (ack?.for === 'bid') {
     let bid = '';
-    while (!parseInt(bid)) {
+    while (isNaN(parseInt(bid))) {
       bid = prompt('Place a bid') ?? '';
     }
     ack.func(parseInt(bid));
