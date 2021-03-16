@@ -47,6 +47,9 @@ const config: webpack.Configuration = {
     htmlPlugin,
     new MiniCssExtractPlugin({
       filename: 'styles.css',
+    }),
+    new webpack.DefinePlugin({
+      SERVER: JSON.stringify(process.env.SERVER)
     })
   ]
 };

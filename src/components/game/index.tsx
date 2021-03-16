@@ -6,7 +6,8 @@ import { cards } from '../card-images';
 import { mapKeys, cloneDeep } from "lodash";
 
 const SocketIO: SocketIOClientStatic = require('socket.io-client');
-const ENDPOINT = process.env.SERVER || "ws://localhost:5000";
+// @ts-ignore SERVER is defined by webpack
+const ENDPOINT = SERVER;
 
 const GridWrapper = styled.div`
   display: grid;
