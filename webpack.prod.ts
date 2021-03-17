@@ -29,7 +29,15 @@ const config: webpack.Configuration = {
           { loader: '@linaria/webpack-loader', options: { sourceMap: true } }
         ],
       },
-      { test: /\.svg$/, loader: '@svgr/webpack' },
+      {
+        test: /\.png$/,
+        use: [{
+          loader: 'url-loader',
+          options: {
+            limit: 10000
+          }
+        }]
+      },
       {
         test: /\.css$/,
         use: [

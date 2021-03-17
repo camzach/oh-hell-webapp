@@ -8,20 +8,20 @@ type Props = {
   numPlayers: number
 }
 
-const RotatedCard = styled.svg<{ angle: number }>`
+const RotatedCard = styled.img<{ angle: number }>`
   transform-origin: top center;
-  transform: rotate(${props => props.angle}deg);
+  transform: translate(-50%) rotate(${props => props.angle}deg);
   height: 10em;
-  width: 100%;
+  width: auto;
   position: absolute;
   top: 50%;
+  left: 50%;
 `;
 
 const Pile = styled.div`
-  height: 20em;
-  width: 20em;
-  border: 2px solid black;
   position: relative;
+  height: 100%;
+  width: 100%;
 `;
 
 export function CardPile(props: Props) {
@@ -31,7 +31,11 @@ export function CardPile(props: Props) {
     <Pile>
       {cards.map((card, idx) =>
         !!card &&
-        <RotatedCard key={idx} angle={idx * angle} as={cardImages[card.suit][card.value]} />
+        <RotatedCard
+          key={idx}
+          angle={idx * angle}
+          as={cardImages[card.suit][card.value]}
+        />
       )}
     </Pile>
   );

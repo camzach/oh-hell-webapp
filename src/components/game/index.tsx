@@ -12,9 +12,9 @@ const ENDPOINT = SERVER;
 const GridWrapper = styled.div`
   display: grid;
   grid-template: 20em auto 20em / 20em auto 20em;
-  grid-template-areas: ".    north ."
-                     "west pile  east"
-                     ".    south .";
+  grid-template-areas: "nw   north ne"
+                       "west pile  east"
+                       "sw   south se";
   height: 100%;
   width: 100%;
 `;
@@ -27,11 +27,19 @@ const HandWrapper = styled.div<{ gridArea: 'north' | 'south' | 'east' | 'west' }
 const PileWrapper = styled.div`
   grid-area: pile;
   margin: auto;
+  width: 100%;
+  height: 100%;
 `;
 const DealButton = styled.button`
   background-color: #acacac;
   border-radius: 1em;
   font-size: 4em;
+`;
+const CornerInfo = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 `;
 
 export type CardType = {
@@ -47,10 +55,10 @@ type GameStateType = {
     west: CardType[]
   }
   bids: {
-    north: number
-    south: number
-    east: number
-    west: number
+    north: number | null
+    south: number | null
+    east: number | null
+    west: number | null
   }
   taken: {
     north: number
@@ -58,15 +66,17 @@ type GameStateType = {
     east: number
     west: number
   }
-  scores: {
+  scores: Array<{
     north: number
     south: number
     east: number
     west: number
-  }
+  }>
   phase: 'play' | 'bid' | 'pre-deal'
   cardsInTrick: Array<CardType | null>
   trumpCard: CardType | null
+  leadSuit: CardType['suit'] | null
+  dealer: 'north' | 'south' | 'east' | 'west' | null
 }
 
 type AckType = {
@@ -90,6 +100,8 @@ const clearedState: GameStateType = {
   phase: 'pre-deal',
   cardsInTrick: [ null, null, null, null ],
   trumpCard: null,
+  leadSuit: null,
+  dealer: null,
   hands: {
     north: [],
     south: [],
@@ -97,10 +109,10 @@ const clearedState: GameStateType = {
     west: []
   },
   bids: {
-    north: 0,
-    south: 0,
-    east: 0,
-    west: 0
+    north: null,
+    south: null,
+    east: null,
+    west: null
   },
   taken: {
     north: 0,
@@ -108,12 +120,7 @@ const clearedState: GameStateType = {
     east: 0,
     west: 0
   },
-  scores: {
-    north: 0,
-    south: 0,
-    east: 0,
-    west: 0
-  }
+  scores: []
 }
 
 export function Game() {
@@ -125,7 +132,7 @@ export function Game() {
     socket.on('connect', () => {
       socket.emit('new_game', {
         players,
-        max_hand: 3
+        max_hand: 7
       });
     });
     socket.on('game_init', (update: any) => {
@@ -133,7 +140,10 @@ export function Game() {
         setAck({ for: 'deal', func: () => socket.emit('deal') });
       }
     });
-    socket.on('deal', console.log);
+    socket.on('dealer', (data: string) => {
+      const dealerName = (data.startsWith('bot_') ? data.slice(4) : data) as GameStateType['dealer'];
+      setGameState((old) => ({ ...old, dealer: dealerName }));
+    });
     socket.on('hands', (data: { [playerId: string]: string[] }) => setGameState((old) => {
       const hands = Object.entries(data).reduce((acc, [ key, hand ]) => {
         const newKey = key.startsWith('bot_') ? key.slice(4) : key;
@@ -147,7 +157,7 @@ export function Game() {
     }));
     socket.on('bid_request', (bids: Partial<GameStateType['bids']>, thisAck: Function) => {
       setGameState((old) => {
-        const newBids = mapKeys(bids, (_, key) => key.startsWith('bot') ? key.slice(4) : key) as GameStateType['bids'];
+        const newBids = mapKeys(bids, (_, key) => key.startsWith('bot_') ? key.slice(4) : key) as GameStateType['bids'];
         return { ...old, bids: { ...old.bids, ...newBids } };
       })
       setAck({ for: 'bid', func: (val) => { thisAck(val); setAck(null) } });
@@ -161,7 +171,6 @@ export function Game() {
             played[0] = val;
             const newHands = cloneDeep(old.hands);
             newHands.south = newHands.south.filter((card) => card.value !== val.value || card.suit !== val.suit);
-            console.log(newHands);
             return { ...old, cardsInTrick: played, hands: newHands };
           });
           thisAck(`${val.value} of ${val.suit}`);
@@ -179,9 +188,8 @@ export function Game() {
         const [ value, suit ] = data.card.toLowerCase().split(' of ');
         played[playerIdx] = { value, suit } as CardType;
         const newHands = cloneDeep(old.hands);
-        const playerName = (data.player.startsWith('bot') ? data.player.slice(4) : data.player) as keyof GameStateType['hands'];
+        const playerName = (data.player.startsWith('bot_') ? data.player.slice(4) : data.player) as keyof GameStateType['hands'];
         newHands[playerName] = newHands[playerName].filter((card) => card.value !== value || card.suit !== suit);
-        console.log(playerName, old.hands, newHands);
         return { ...old, cardsInTrick: played, hands: newHands };
       })
     });
@@ -191,21 +199,31 @@ export function Game() {
     });
     socket.on('bids', (bids: GameStateType['bids']) => {
       setGameState((old) => {
-        const newBids = mapKeys(bids, (_, key) => key.startsWith('bot') ? key.slice(4) : key) as GameStateType['bids'];
-        return { ...old, bids: newBids };
+        const newBids = mapKeys(bids, (_, key) => key.startsWith('bot_') ? key.slice(4) : key) as GameStateType['bids'];
+        return { ...old, bids: newBids, phase: 'play' };
       })
     });
-    socket.on('lead_suit', console.log);
-    socket.on('trick_winner', (winner: keyof GameStateType['taken'], ack: () => void) => {
-      setAck({ for: 'trick_end', winner, func: () => {
+    socket.on('lead_suit', (data: CardType['suit']) => {
+      setGameState((old) => ({
+        ...old,
+        leadSuit: data.toLowerCase() as CardType['suit']
+      }));
+    });
+    socket.on('trick_winner', (winner: string, ack: () => void) => {
+      const winnerName = (winner.startsWith('bot_') ? winner.slice(4) : winner) as keyof GameStateType['taken'];
+      setGameState((old) => ({
+        ...old,
+        taken: {
+          ...old.taken,
+          [winnerName]: old.taken[winnerName] + 1
+        }
+      }))
+      setAck({ for: 'trick_end', winner: winnerName, func: () => {
         ack();
         setGameState((old) => ({
           ...old,
           cardsInTrick: [],
-          taken: {
-            ...old.taken,
-            [winner]: old.taken[winner] + 1
-          }
+          leadSuit: null
         }));
       }});
     })
@@ -216,14 +234,18 @@ export function Game() {
       }));
       setAck({ for: 'deal', func: () => socket.emit('deal') });
     });
-    socket.on('scores', (scores: GameStateType['scores']) => {
+    socket.on('scores', (scores: GameStateType['scores'][0]) => {
       setGameState((old) => ({
         ...old,
-        scores: mapKeys(scores, (_, key) => key.startsWith('bot') ? key.slice(4) : key) as GameStateType['scores']
+        scores: [...old.scores, mapKeys(scores, (_, key) => key.startsWith('bot_') ? key.slice(4) : key)] as GameStateType['scores']
       }));
     });
+    socket.on('disconnect', () => {
+      alert('disconnected');
+    });
+    socket.on('error', console.log);
   }, []);
-
+  console.log(gameState.dealer);
   return (
     <GridWrapper>
       {Object.entries(gameState.hands).map(([ playerId, hand ]: [keyof GameStateType['hands'], CardType[]]) =>
@@ -231,11 +253,13 @@ export function Game() {
           <PlayerHand
             hidden={playerId !== 'south'}
             cards={hand}
+            leadSuit={gameState.leadSuit}
             onPlay={ack?.for === 'play' ? ack.func : undefined}
           />
-          <span>{`Bid: ${gameState.bids[playerId]}`}</span>
-          <span>{`Taken: ${gameState.taken[playerId]}`}</span>
-          <span>{`Score: ${gameState.scores[playerId]}`}</span>
+          {gameState.dealer === playerId && <span>{'Dealer'}</span>}
+          {gameState.bids[playerId] !== null && <span>{`Bid: ${gameState.bids[playerId]}`}</span>}
+          {gameState.phase === 'play' && <span>{`Taken: ${gameState.taken[playerId]}`}</span>}
+          <span>{`Score: ${gameState.scores.slice(-1)?.[0]?.[playerId] ?? 0}`}</span>
         </HandWrapper>
       )}
       <PileWrapper>
@@ -245,13 +269,13 @@ export function Game() {
         <DealButton onClick={ack.func}>{'Deal'}</DealButton>
       }
       {gameState.trumpCard &&
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-          {cards[gameState.trumpCard.suit][gameState.trumpCard.value]({ height: '10em', width: 'auto' })}
+        <CornerInfo>
+          {cards[gameState.trumpCard.suit][gameState.trumpCard.value]({ style: { height: '10em', width: 'auto' } })}
           <span>{'Trump Card'}</span>
-        </div>
+        </CornerInfo>
       }
       {ack?.for === 'bid' &&
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+        <CornerInfo>
           <input
             value={tempBid}
             min={0}
@@ -260,13 +284,43 @@ export function Game() {
             type={'number'}
           />
           <button onClick={() => ack.func(tempBid)}>{'Place bid'}</button>
-        </div>
-      }{ack?.for === 'trick_end' &&
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+        </CornerInfo>
+      }
+      {ack?.for === 'trick_end' &&
+      <CornerInfo>
         <span>{`${ack.winner} won the trick`}</span>
         <button onClick={ack.func}>{'Next trick'}</button>
-      </div>
+      </CornerInfo>
     }
+    {gameState.leadSuit &&
+      <CornerInfo>
+        <span>{`Lead suit is ${gameState.leadSuit}`}</span>
+      </CornerInfo>
+    }
+    <CornerInfo style={{ gridArea: 'sw' }}>
+      <table>
+        <thead>
+          <tr>
+          <th>Round</th>
+          <th>North</th>
+          <th>South</th>
+          <th>East</th>
+          <th>West</th>
+          </tr>
+        </thead>
+        <tbody>
+        {gameState.scores.map((row, idx) =>
+          <tr key={idx}>
+            <td>{idx + 1}</td>
+            <td>{row.north}</td>
+            <td>{row.south}</td>
+            <td>{row.east}</td>
+            <td>{row.west}</td>
+          </tr>
+        )}
+        </tbody>
+      </table>
+    </CornerInfo>
     </GridWrapper>
   );
 }
