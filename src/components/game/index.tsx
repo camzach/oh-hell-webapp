@@ -3,7 +3,7 @@ import { CardPile } from "../card-pile";
 import { PlayerHand } from "../player-hand";
 import { styled } from '@linaria/react';
 import { cards } from '../card-images';
-import { mapKeys, cloneDeep } from "lodash";
+import { cloneDeep } from "lodash";
 
 const SocketIO: SocketIOClientStatic = require('socket.io-client');
 // @ts-ignore SERVER is defined by webpack
@@ -47,7 +47,26 @@ export type CardType = {
   value: 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 'jack' | 'queen' | 'king' | 'ace'
 }
 
+type AIType = {
+  is_ai: true
+  algorithm: 'MCTS'
+  search_time: number
+} | {
+  is_ai: true
+  algorithm: 'AlphaBeta'
+  max_depth: number
+} | {
+  is_ai: true
+  algorithm: 'random'
+}
+
 type GameStateType = {
+  players: [
+    { name: 'south' },
+    { name: 'west' } & AIType,
+    { name: 'north' } & AIType,
+    { name: 'east' } & AIType
+  ]
   hands: {
     north: CardType[]
     south: CardType[]
@@ -80,6 +99,9 @@ type GameStateType = {
 }
 
 type AckType = {
+  for: 'start',
+  func: () => void
+} | {
   for: 'play',
   func: (card: CardType) => void
 } | {
@@ -94,9 +116,16 @@ type AckType = {
   func: () => void
 }
 
-const players = [ 'south', 'bot_west', 'bot_north', 'bot_east' ];
+const defaultAlphaBetaDepth = 3;
+const defaultMCTSSearchTime = 1;
 
 const clearedState: GameStateType = {
+  players: [
+    { name: 'south' },
+    { name: 'west', is_ai: true, algorithm: 'random' },
+    { name: 'north', is_ai: true, algorithm: 'random' },
+    { name: 'east', is_ai: true, algorithm: 'random' }
+  ],
   phase: 'pre-deal',
   cardsInTrick: [ null, null, null, null ],
   trumpCard: null,
@@ -130,10 +159,15 @@ export function Game() {
   React.useEffect(() => {
     const socket = SocketIO(ENDPOINT);
     socket.on('connect', () => {
-      socket.emit('new_game', {
-        players,
-        max_hand: 7
-      });
+      setAck({
+        for: 'start',
+        func: () => {
+          socket.emit('new_game', {
+            players: gameState.players,
+            max_hand: 7
+          });
+        }
+      })
     });
     socket.on('game_init', (update: any) => {
       if ('success' in update) {
@@ -141,23 +175,22 @@ export function Game() {
       }
     });
     socket.on('dealer', (data: string) => {
-      const dealerName = (data.startsWith('bot_') ? data.slice(4) : data) as GameStateType['dealer'];
+      const dealerName = data as GameStateType['dealer'];
       setGameState((old) => ({ ...old, dealer: dealerName }));
     });
     socket.on('hands', (data: { [playerId: string]: string[] }) => setGameState((old) => {
       const hands = Object.entries(data).reduce((acc, [ key, hand ]) => {
-        const newKey = key.startsWith('bot_') ? key.slice(4) : key;
         const newHand = hand.map((card) => {
           const [ value, suit ] = card.toLowerCase().split(' of ');
           return { suit, value };
         });
-        return { ...acc, [newKey]: newHand };
+        return { ...acc, [key]: newHand };
       }, { north: [], south: [], east: [], west: []});
       return { ...old, phase: 'bid', hands };
     }));
     socket.on('bid_request', (bids: Partial<GameStateType['bids']>, thisAck: Function) => {
       setGameState((old) => {
-        const newBids = mapKeys(bids, (_, key) => key.startsWith('bot_') ? key.slice(4) : key) as GameStateType['bids'];
+        const newBids = bids as GameStateType['bids'];
         return { ...old, bids: { ...old.bids, ...newBids } };
       })
       setAck({ for: 'bid', func: (val) => { thisAck(val); setAck(null) } });
@@ -181,14 +214,14 @@ export function Game() {
     socket.on('play', (data: { player: keyof GameStateType['hands'], card: string }) => {
       setGameState((old) => {
         const played = [ ...old.cardsInTrick ];
-        const playerIdx = players.indexOf(data.player);
+        const playerIdx = gameState.players.findIndex((player) => player.name === data.player);
         if (!playerIdx) {
           return old;
         }
         const [ value, suit ] = data.card.toLowerCase().split(' of ');
         played[playerIdx] = { value, suit } as CardType;
         const newHands = cloneDeep(old.hands);
-        const playerName = (data.player.startsWith('bot_') ? data.player.slice(4) : data.player) as keyof GameStateType['hands'];
+        const playerName = data.player as keyof GameStateType['hands'];
         newHands[playerName] = newHands[playerName].filter((card) => card.value !== value || card.suit !== suit);
         return { ...old, cardsInTrick: played, hands: newHands };
       })
@@ -199,7 +232,7 @@ export function Game() {
     });
     socket.on('bids', (bids: GameStateType['bids']) => {
       setGameState((old) => {
-        const newBids = mapKeys(bids, (_, key) => key.startsWith('bot_') ? key.slice(4) : key) as GameStateType['bids'];
+        const newBids = bids as GameStateType['bids'];
         return { ...old, bids: newBids, phase: 'play' };
       })
     });
@@ -210,7 +243,7 @@ export function Game() {
       }));
     });
     socket.on('trick_winner', (winner: string, ack: () => void) => {
-      const winnerName = (winner.startsWith('bot_') ? winner.slice(4) : winner) as keyof GameStateType['taken'];
+      const winnerName = winner as keyof GameStateType['taken'];
       setGameState((old) => ({
         ...old,
         taken: {
@@ -230,14 +263,15 @@ export function Game() {
     socket.on('round_end', () => {
       setGameState((old) => ({
         ...clearedState,
-        scores: old.scores
+        scores: old.scores,
+        players: old.players
       }));
       setAck({ for: 'deal', func: () => socket.emit('deal') });
     });
     socket.on('scores', (scores: GameStateType['scores'][0]) => {
       setGameState((old) => ({
         ...old,
-        scores: [...old.scores, mapKeys(scores, (_, key) => key.startsWith('bot_') ? key.slice(4) : key)] as GameStateType['scores']
+        scores: [...old.scores, scores] as GameStateType['scores']
       }));
     });
     socket.on('disconnect', () => {
@@ -245,26 +279,96 @@ export function Game() {
     });
     socket.on('error', console.log);
   }, []);
-  console.log(gameState.dealer);
+
   return (
     <GridWrapper>
-      {Object.entries(gameState.hands).map(([ playerId, hand ]: [keyof GameStateType['hands'], CardType[]]) =>
-        <HandWrapper key={playerId} gridArea={playerId as keyof GameStateType['hands']}>
-          <PlayerHand
-            hidden={playerId !== 'south'}
-            cards={hand}
-            leadSuit={gameState.leadSuit}
-            onPlay={ack?.for === 'play' ? ack.func : undefined}
-          />
-          {gameState.dealer === playerId && <span>{'Dealer'}</span>}
-          {gameState.bids[playerId] !== null && <span>{`Bid: ${gameState.bids[playerId]}`}</span>}
-          {gameState.phase === 'play' && <span>{`Taken: ${gameState.taken[playerId]}`}</span>}
-          <span>{`Score: ${gameState.scores.slice(-1)?.[0]?.[playerId] ?? 0}`}</span>
-        </HandWrapper>
-      )}
+      {gameState.phase === 'pre-deal' && ack?.for === 'start' ?
+        gameState.players.map((player, index) =>
+          // No AI setup for south, that's a human player
+          player.name === 'south' ? null :
+          <HandWrapper key={player.name} gridArea={player.name as keyof GameStateType['hands']}>
+            <div>{`Setup for ${player.name}`}</div>
+            <select
+              // @ts-ignore
+              value={gameState.players[index].algorithm}
+              onChange={(e) => setGameState((old) => {
+                const newPlayers = old.players;
+                // @ts-ignore
+                newPlayers[index].algorithm = e.target.value;
+                if (e.target.value === 'MCTS') {
+                  // @ts-ignore
+                  newPlayers[index]['search_time'] = defaultMCTSSearchTime;
+                } else if (e.target.value === 'AlphaBeta') {
+                  // @ts-ignore
+                  newPlayers[index]['max_depth'] = defaultAlphaBetaDepth;
+                }
+                return { ...old, players: newPlayers };
+              })}
+            >
+              <option>{'random'}</option>
+              <option>{'MCTS'}</option>
+              <option>{'AlphaBeta'}</option>
+            </select>
+            {(() => {
+              // @ts-ignore
+              switch(player.algorithm) {
+                case 'MCTS':
+                  return (
+                    <input
+                      type={'number'}
+                      step={0.05}
+                      // @ts-ignore
+                      value={gameState.players[index]['search_time'] || defaultMCTSSearchTime}
+                      onChange={(e) => setGameState((old) => {
+                        const newPlayers = old.players;
+                        // @ts-ignore
+                        newPlayers[index]['search_time'] = parseFloat(e.target.value);
+                        return { ...old, players: newPlayers };
+                      })}
+                      placeholder={'search time'}
+                    />
+                  );
+                case 'AlphaBeta':
+                  return (
+                    <input
+                      type={'number'}
+                      step={0.05}
+                      // @ts-ignore
+                      value={gameState.players[index]['max_depth'] || defaultAlphaBetaDepth}
+                      onChange={(e) => setGameState((old) => {
+                        const newPlayers = old.players;
+                        // @ts-ignore
+                        newPlayers[index]['max_depth'] = parseFloat(e.target.value);
+                        return { ...old, players: newPlayers };
+                      })}
+                      placeholder={'max depth'}
+                    />
+                  );
+                default:
+                  return null;
+              }
+            })()}
+          </HandWrapper>) :
+        Object.entries(gameState.hands).map(([ playerId, hand ]: [keyof GameStateType['hands'], CardType[]]) =>
+          <HandWrapper key={playerId} gridArea={playerId as keyof GameStateType['hands']}>
+            <PlayerHand
+              hidden={playerId !== 'south'}
+              cards={hand}
+              leadSuit={gameState.leadSuit}
+              onPlay={ack?.for === 'play' ? ack.func : undefined}
+            />
+            {gameState.dealer === playerId && <span>{'Dealer'}</span>}
+            {gameState.bids[playerId] !== null && <span>{`Bid: ${gameState.bids[playerId]}`}</span>}
+            {gameState.phase === 'play' && <span>{`Taken: ${gameState.taken[playerId]}`}</span>}
+            <span>{`Score: ${gameState.scores.slice(-1)?.[0]?.[playerId] ?? 0}`}</span>
+          </HandWrapper>
+        )}
       <PileWrapper>
         <CardPile cards={gameState.cardsInTrick} numPlayers={4} />
       </PileWrapper>
+      {gameState.phase === 'pre-deal' && ack?.for === 'start' &&
+        <DealButton onClick={ack.func}>{'New game'}</DealButton>
+      }
       {gameState.phase === 'pre-deal' && ack?.for === 'deal' &&
         <DealButton onClick={ack.func}>{'Deal'}</DealButton>
       }
