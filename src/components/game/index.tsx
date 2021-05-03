@@ -53,7 +53,7 @@ type AIType = {
   search_time: number
 } | {
   is_ai: true
-  algorithm: 'AlphaBeta'
+  algorithm: 'STS'
   max_depth: number
 } | {
   is_ai: true
@@ -116,7 +116,7 @@ type AckType = {
   func: () => void
 }
 
-const defaultAlphaBetaDepth = 3;
+const defaultSTSDepth = 3;
 const defaultMCTSSearchTime = 1;
 
 const clearedState: GameStateType = {
@@ -298,16 +298,16 @@ export function Game() {
                 if (e.target.value === 'MCTS') {
                   // @ts-ignore
                   newPlayers[index]['search_time'] = defaultMCTSSearchTime;
-                } else if (e.target.value === 'AlphaBeta') {
+                } else if (e.target.value === 'STS') {
                   // @ts-ignore
-                  newPlayers[index]['max_depth'] = defaultAlphaBetaDepth;
+                  newPlayers[index]['max_depth'] = defaultSTSDepth;
                 }
                 return { ...old, players: newPlayers };
               })}
             >
               <option>{'random'}</option>
               <option>{'MCTS'}</option>
-              <option>{'AlphaBeta'}</option>
+              <option>{'STS'}</option>
             </select>
             {(() => {
               // @ts-ignore
@@ -328,13 +328,13 @@ export function Game() {
                       placeholder={'search time'}
                     />
                   );
-                case 'AlphaBeta':
+                case 'STS':
                   return (
                     <input
                       type={'number'}
                       step={0.05}
                       // @ts-ignore
-                      value={gameState.players[index]['max_depth'] || defaultAlphaBetaDepth}
+                      value={gameState.players[index]['max_depth'] || defaultSTSDepth}
                       onChange={(e) => setGameState((old) => {
                         const newPlayers = old.players;
                         // @ts-ignore
